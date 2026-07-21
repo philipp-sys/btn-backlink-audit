@@ -219,18 +219,22 @@ def _host(url: str) -> str:
     return host[4:] if host.startswith("www.") else host
 
 
-def fetch_new_lost(limit: int = 150) -> dict:
-    """Neue & verlorene Links über Semrushs eigene newlink/lostlink-Flags
-    (unabhängig von unserer Snapshot-Historie -> funktioniert ab Lauf 1)."""
+def fetch_new_lost(limit: int = 200) -> dict:
+    """Neue & verlorene Links über Semrushs eigene newlink/lostlink-Flags.
+    Die Roh-API kennt kein Server-Filter auf diese Flags (nur type/zone/ip/
+    refdomain/anchor sind filterbar) -> wir ziehen die jüngsten Links und
+    filtern die Boolean-Spalten clientseitig. Funktioniert ab Lauf 1,
+    unabhängig von unserer Snapshot-Historie."""
     cols = "page_ascore,source_url,anchor,newlink,lostlink,first_seen,last_seen"
-    new_raw = semrush_request("backlinks", {
-        "export_columns": cols, "display_sort": "first_seen_desc",
-        "display_limit": str(limit), "display_filter": "+|newlink|eq|true",
-    })
-    lost_raw = semrush_request("backlinks", {
-        "export_columns": cols, "display_sort": "last_seen_desc",
-        "display_limit": str(limit), "display_filter": "+|lostlink|eq|true",
-    })
+
+    def pull(sort: str) -> list[dict]:
+        raw = semrush_request("backlinks", {
+            "export_columns": cols, "display_sort": sort, "display_limit": str(limit),
+        })
+        return parse_csv(raw)
+
+    def is_true(v) -> bool:
+        return str(v).strip().lower() == "true"
 
     def domains_from(rows: list[dict]) -> list[str]:
         seen, out = set(), []
@@ -241,7 +245,8 @@ def fetch_new_lost(limit: int = 150) -> dict:
                 out.append(host)
         return out
 
-    new_rows, lost_rows = parse_csv(new_raw), parse_csv(lost_raw)
+    new_rows = [r for r in pull("first_seen_desc") if is_true(r.get("newlink"))]
+    lost_rows = [r for r in pull("last_seen_desc") if is_true(r.get("lostlink"))]
     return {
         "new_backlinks": len(new_rows),
         "lost_backlinks": len(lost_rows),
@@ -734,7 +739,7 @@ def main():
     tld = _safe(lambda: fetch_tld(10), [], "TLD-Verteilung")
     geo = _safe(lambda: fetch_geo(10), [], "Geo-Verteilung")
     top_refdomains = _safe(
-        lambda: fetch_refdomains(20, "domain_authority_score_desc",
+        lambda: fetch_refdomains(20, "domain_ascore_desc",
                                  "domain_ascore,domain,backlinks_num,country"),
         [], "Top-Ref-Domains")
 
@@ -745,7 +750,7 @@ def main():
 
     print("[4/7] Toxicity-Analyse + Disavow-Kandidaten...")
     tox_candidates = _safe(
-        lambda: fetch_refdomains(400, "domain_authority_score_asc",
+        lambda: fetch_refdomains(400, "domain_ascore_asc",
                                  "domain_ascore,domain,backlinks_num,country"),
         [], "Toxicity-Kandidaten")
     tox = analyze_toxicity(tox_candidates)
