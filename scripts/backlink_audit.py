@@ -111,12 +111,20 @@ PLAUSIBLE_GEO = {"de", "at", "ch", "us", "gb", "fr", "nl", "be", "it", "es", ""}
 # 1. Semrush-Zugriff
 # --------------------------------------------------------------------------
 
-def semrush_request(report_type: str, extra_params: dict, attempts: int = 3) -> str:
+# Statuscodes, die auf transiente Drosselung/Serverfehler hindeuten und einen
+# Retry rechtfertigen. 403 gehört dazu, weil Semrush teure Reports (große
+# Backlink-/Ref-Domain-Listen) bei zu vielen Anfragen kurzfristig mit 403
+# drosselt — ein Backoff löst das meist. (Bei echter Kontingent-Erschöpfung
+# scheitern alle Reports; das ist an leeren Sektionen im Report erkennbar.)
+RETRYABLE_STATUS = {403, 429, 500, 502, 503, 504}
+
+
+def semrush_request(report_type: str, extra_params: dict, attempts: int = 4) -> str:
     """Ruft einen Semrush-Report ab und gibt die Rohantwort (CSV, ';'-getrennt) zurück.
 
-    Robust gegen transiente Fehler: bei 5xx-Server-Fehlern oder Netzwerk-
-    Problemen wird mit kurzem Backoff wiederholt (Semrush liefert gelegentlich
-    sporadische 500er). 4xx-Client-Fehler werden NICHT wiederholt (deterministisch).
+    Robust gegen transiente Fehler: bei Drosselung (403/429), 5xx-Serverfehlern
+    oder Netzwerkproblemen wird mit wachsendem Backoff wiederholt. Andere
+    4xx-Client-Fehler (falsche Parameter) scheitern sofort — Retry hülfe nicht.
     """
     export_columns = extra_params.pop("export_columns", "")
     params = {
@@ -135,17 +143,16 @@ def semrush_request(report_type: str, extra_params: dict, attempts: int = 3) -> 
             resp = requests.get(SEMRUSH_API_URL, params=params, timeout=60)
         except requests.RequestException as exc:            # Timeout / Verbindung
             last_exc = exc
-            time.sleep(2 * (attempt + 1))
-            continue
-        if 500 <= resp.status_code < 600:                   # transienter Serverfehler
+        else:
+            if resp.status_code not in RETRYABLE_STATUS:
+                resp.raise_for_status()                     # andere 4xx -> sofort scheitern
+                if resp.text.startswith("ERROR"):
+                    raise RuntimeError(f"Semrush-Fehler bei {report_type}: {resp.text}")
+                return resp.text
             last_exc = requests.HTTPError(
-                f"{resp.status_code} Server Error bei {report_type}")
-            time.sleep(2 * (attempt + 1))
-            continue
-        resp.raise_for_status()                             # 4xx -> sofort scheitern
-        if resp.text.startswith("ERROR"):
-            raise RuntimeError(f"Semrush-Fehler bei {report_type}: {resp.text}")
-        return resp.text
+                f"{resp.status_code} bei {report_type} (Drosselung/Serverfehler)")
+        if attempt < attempts - 1:
+            time.sleep(3 * (attempt + 1))                   # 3s, 6s, 9s
     raise last_exc
 
 
@@ -422,9 +429,11 @@ def check_alerts(deltas: dict, tox: dict, current: dict, low_as_share: int) -> l
         asr = deltas["authority_score"]
         if asr["abs"] <= ALERT_THRESHOLDS["authority_score_drop"]:
             alerts.append(f"Authority Score um {asr['abs']} Punkte gefallen")
-    if low_as_share >= ALERT_THRESHOLDS["toxic_share_pct"]:
+    if low_as_share is not None and low_as_share >= ALERT_THRESHOLDS["toxic_share_pct"]:
+        tail = (f"; {tox['count']} konkrete Disavow-Kandidaten"
+                if tox.get("available") and tox["count"] else "")
         alerts.append(f"{low_as_share}% der Referring Domains mit sehr niedriger "
-                      f"Autorität (AS ≤ 5); {tox['count']} konkrete Disavow-Kandidaten — prüfen")
+                      f"Autorität (AS ≤ 5){tail} — prüfen")
     return alerts
 
 
@@ -463,13 +472,14 @@ def build_narrative(current, deltas, history, tox, anchors_cls, low_as_share) ->
             f"Domains verändert (Authority Score aktuell {current['authority_score']})."
         )
     if low_as_share:
-        parts.append(
-            f"Auffällig: rund {low_as_share}% der verweisenden Domains haben einen "
-            f"sehr niedrigen Authority Score (≤ 5) — typisch für Link-Spam- und "
-            f"PBN-Netzwerke. {tox['count']} davon sind mit weiteren Spam-Signalen "
-            f"(Spam-TLDs, Free-Host, unplausible Herkunft) als konkrete Disavow-"
-            f"Kandidaten markiert, was auf eine mögliche Negative-SEO-Belastung hindeutet."
-        )
+        s = (f"Auffällig: rund {low_as_share}% der verweisenden Domains haben einen "
+             f"sehr niedrigen Authority Score (≤ 5) — typisch für Link-Spam- und "
+             f"PBN-Netzwerke.")
+        if tox.get("available") and tox["count"]:
+            s += (f" {tox['count']} davon sind mit weiteren Spam-Signalen (Spam-TLDs, "
+                  f"Free-Host, unplausible Herkunft) als konkrete Disavow-Kandidaten "
+                  f"markiert, was auf eine mögliche Negative-SEO-Belastung hindeutet.")
+        parts.append(s)
     if anchors_cls["spam"]:
         parts.append(
             f"Zusätzlich sind Money-/Spam-Anchors erkennbar "
@@ -477,10 +487,21 @@ def build_narrative(current, deltas, history, tox, anchors_cls, low_as_share) ->
             f"Casino-/SEO-Link-Texte), die nicht zum Münzhandel passen."
         )
 
-    if low_as_share >= 40 or anchors_cls["spam_pct"] >= 15:
+    # Datenlücke transparent machen (statt sie als "sauberes Profil" auszugeben).
+    data_gap = (low_as_share is None) or (not tox.get("available", True))
+    if data_gap:
+        parts.append(
+            "Hinweis: Einzelne Semrush-Reports waren in diesem Lauf temporär nicht "
+            "abrufbar (API-Drosselung). Betroffene Abschnitte sind entsprechend "
+            "gekennzeichnet und erscheinen im nächsten Lauf vollständig."
+        )
+
+    if (low_as_share or 0) >= 40 or anchors_cls["spam_pct"] >= 15:
         verdict, verdict_class = "Handlungsbedarf: Spam-Belastung", "neg"
     elif deltas.get("has_previous") and deltas["referring_domains"]["pct"] <= -5:
         verdict, verdict_class = "Beobachten: rückläufig", "amber"
+    elif data_gap:
+        verdict, verdict_class = "Teildaten — nächsten Lauf prüfen", "amber"
     else:
         verdict, verdict_class = "Stabil", "pos"
 
@@ -756,7 +777,9 @@ def main():
     history = fetch_historical()
 
     print("[2/7] Detaildaten (Ref-Domains, AS-Profil, Anchors, TLD, Geo)...")
-    ascore_profile = _safe(fetch_ascore_profile, [], "AS-Profil")
+    ascore_profile = _safe(fetch_ascore_profile, None, "AS-Profil")
+    ascore_available = ascore_profile is not None
+    ascore_profile = ascore_profile or []
     anchors = _safe(lambda: fetch_anchors(30), [], "Anchors")
     tld = _safe(lambda: fetch_tld(10), [], "TLD-Verteilung")
     geo = _safe(lambda: fetch_geo(10), [], "Geo-Verteilung")
@@ -774,14 +797,19 @@ def main():
     tox_candidates = _safe(
         lambda: fetch_refdomains(400, "domain_ascore_asc",
                                  "domain_ascore,domain,backlinks_num,country"),
-        [], "Toxicity-Kandidaten")
-    tox = analyze_toxicity(tox_candidates)
+        None, "Toxicity-Kandidaten")
+    tox = analyze_toxicity(tox_candidates or [])
+    tox["available"] = tox_candidates is not None
     anchors_cls = classify_anchors(anchors)
     # Anteil niedrig-autoritärer Domains (AS <= 5) aus der VOLLEN AS-Verteilung
-    # -> belastbarer als die (gekappte) Kandidatenliste.
-    low_as = sum(_to_int(r.get("domains_num")) for r in ascore_profile
-                 if _to_int(r.get("ascore")) <= 5)
-    low_as_share = round(low_as / (current["referring_domains"] or 1) * 100)
+    # -> belastbarer als die (gekappte) Kandidatenliste. None = Daten fehlten,
+    # damit eine API-Lücke nicht faelschlich als "sauberes Profil" erscheint.
+    if ascore_available:
+        low_as = sum(_to_int(r.get("domains_num")) for r in ascore_profile
+                     if _to_int(r.get("ascore")) <= 5)
+        low_as_share = round(low_as / (current["referring_domains"] or 1) * 100)
+    else:
+        low_as_share = None
 
     print("[5/7] Interpretation, Empfehlungen, Deltas...")
     deltas = compute_deltas(current, history)
