@@ -1,1 +1,22 @@
-[]
+[
+  {
+    "date": "2026-07-21",
+    "overview": {
+      "total_backlinks": 5257,
+      "referring_domains": 1084,
+      "referring_ips": 1027,
+      "follow": 4331,
+      "nofollow": 929,
+      "authority_score": 32,
+      "trust_score": 32,
+      "referring_urls": 4601
+    },
+    "toxic_domains": 400,
+    "toxic_high": 68,
+    "anchor_split": {
+      "branded_pct": 85,
+      "money_pct": 3,
+      "spam_pct": 12
+    }
+  }
+]
