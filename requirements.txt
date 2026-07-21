@@ -1,0 +1,9 @@
+requests==2.32.3
+Jinja2==3.1.4
+weasyprint==62.3
+# pydyf ist eine WeasyPrint-Abhängigkeit ohne Upper-Bound in weasyprint 62.3.
+# Muss gepinnt werden: neuere pydyf-Versionen (0.11+) ändern die Stream-API und
+# brechen die PDF-Erzeugung ("'super' object has no attribute 'transform'").
+pydyf==0.10.0
+google-api-python-client==2.140.0
+google-auth==2.34.0

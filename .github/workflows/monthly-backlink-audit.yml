@@ -1,0 +1,52 @@
+name: Monatlicher Backlink-Audit
+
+on:
+  schedule:
+    # 25. jedes Monats, 07:00 UTC (~ nach Abschluss des Semrush-Crawls,
+    # analog zum bestehenden monatlichen SEO-Reporting-Rhythmus)
+    - cron: "0 7 25 * *"
+  workflow_dispatch: {}   # manueller Trigger zum Testen im GitHub-UI
+
+permissions:
+  # Nötig, damit der letzte Step data/history.json zurück ins Repo committen darf.
+  # Ohne diese Zeile ist der GITHUB_TOKEN read-only und "git push" schlägt fehl.
+  contents: write
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Python einrichten
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: System-Abhängigkeiten für WeasyPrint (PDF-Rendering)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpango-1.0-0 libpangocairo-1.0-0 libgdk-pixbuf2.0-0 libffi-dev
+
+      - name: Python-Abhängigkeiten installieren
+        run: pip install -r requirements.txt
+
+      - name: Audit ausführen
+        env:
+          SEMRUSH_API_KEY: ${{ secrets.SEMRUSH_API_KEY }}
+          SMTP_HOST: ${{ secrets.SMTP_HOST }}
+          SMTP_PORT: ${{ secrets.SMTP_PORT }}
+          SMTP_USER: ${{ secrets.SMTP_USER }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          REPORT_RECIPIENTS: ${{ secrets.REPORT_RECIPIENTS }}
+          GSC_SERVICE_ACCOUNT_JSON: ${{ secrets.GSC_SERVICE_ACCOUNT_JSON }}
+        run: python scripts/backlink_audit.py
+
+      - name: Snapshot-Historie zurückcommitten
+        run: |
+          git config user.name "backlink-audit-bot"
+          git config user.email "actions@github.com"
+          git add data/history.json
+          git diff --cached --quiet || git commit -m "Backlink-Snapshot $(date +'%Y-%m')"
+          git push
