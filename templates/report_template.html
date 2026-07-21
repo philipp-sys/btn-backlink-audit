@@ -138,9 +138,9 @@
             {% if deltas.has_previous %}<div class="{{ 'delta-pos' if deltas.authority_score.abs >= 0 else 'delta-neg' }}">{{ '%+d' % deltas.authority_score.abs }} Pkt.</div>{% endif %}
         </div>
         <div class="kpi-card">
-            <div class="kpi-value">{{ narrative.low_as_share }}%</div>
+            <div class="kpi-value">{{ narrative.low_as_share ~ '%' if narrative.low_as_share is not none else '—' }}</div>
             <div class="kpi-label">niedrige Autorität (AS ≤ 5)</div>
-            <div class="muted" style="font-size:8pt">{{ tox.count }} Disavow-Kandidaten</div>
+            <div class="muted" style="font-size:8pt">{% if tox.available %}{{ tox.count }} Disavow-Kandidaten{% else %}Daten nicht abrufbar{% endif %}</div>
         </div>
     </div>
 </div>
@@ -166,10 +166,13 @@
 <!-- ============ TOXICITY & DISAVOW ============ -->
 <div class="section">
     <h2>Toxische Backlinks &amp; Disavow</h2>
+    {% if not tox.available %}
+    <div class="alert-box"><p>Die Toxicity-/Disavow-Daten konnten in diesem Lauf nicht von Semrush abgerufen werden (temporäre API-Drosselung der großen Ref-Domain-Abfrage). Dieser Abschnitt erscheint im nächsten Monatslauf wieder vollständig — es bedeutet <strong>nicht</strong>, dass keine toxischen Links vorliegen.</p></div>
+    {% else %}
     <div class="tox-head">
         <div class="tox-stat"><div class="n">{{ tox.count }}</div><div class="l">Disavow-Kandidaten</div></div>
         <div class="tox-stat"><div class="n">{{ tox.high }}</div><div class="l">davon hochgradig</div></div>
-        <div class="tox-stat"><div class="n">{{ narrative.low_as_share }}%</div><div class="l">Profil mit AS ≤ 5</div></div>
+        <div class="tox-stat"><div class="n">{{ narrative.low_as_share ~ '%' if narrative.low_as_share is not none else '—' }}</div><div class="l">Profil mit AS ≤ 5</div></div>
     </div>
     {% if tox.flagged %}
     <p class="lead">Die {{ tox.count }} auffälligsten verweisenden Domains (heuristische Bewertung aus Authority Score, TLD, Herkunft &amp; Anchor-Mustern). Die vollständige Liste liegt der Mail als <strong>disavow.txt</strong> bei — <strong>vor dem Upload manuell prüfen</strong>.</p>
@@ -188,6 +191,7 @@
     </table>
     {% else %}
     <p class="lead">Keine Domains oberhalb der Toxicity-Schwelle gefunden — das Profil wirkt aktuell unauffällig.</p>
+    {% endif %}
     {% endif %}
 </div>
 
