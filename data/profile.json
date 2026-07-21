@@ -1,0 +1,175 @@
+{
+  "source": "Semrush Backlink Analytics (API-Snapshot 2026-07-21) + manuelle Monats-Updates",
+  "follow": 4331,
+  "nofollow": 929,
+  "history": [
+    {
+      "ts": 1722484800,
+      "date": "2024-08",
+      "backlinks": 7352,
+      "domains": 684,
+      "score": 27
+    },
+    {
+      "ts": 1725163200,
+      "date": "2024-09",
+      "backlinks": 7014,
+      "domains": 636,
+      "score": 27
+    },
+    {
+      "ts": 1727755200,
+      "date": "2024-10",
+      "backlinks": 6884,
+      "domains": 615,
+      "score": 30
+    },
+    {
+      "ts": 1730433600,
+      "date": "2024-11",
+      "backlinks": 6917,
+      "domains": 583,
+      "score": 30
+    },
+    {
+      "ts": 1733029200,
+      "date": "2024-12",
+      "backlinks": 6863,
+      "domains": 507,
+      "score": 31
+    },
+    {
+      "ts": 1735707600,
+      "date": "2025-01",
+      "backlinks": 6081,
+      "domains": 471,
+      "score": 31
+    },
+    {
+      "ts": 1738386000,
+      "date": "2025-02",
+      "backlinks": 5247,
+      "domains": 456,
+      "score": 32
+    },
+    {
+      "ts": 1740805200,
+      "date": "2025-03",
+      "backlinks": 4375,
+      "domains": 454,
+      "score": 33
+    },
+    {
+      "ts": 1743480000,
+      "date": "2025-04",
+      "backlinks": 4215,
+      "domains": 464,
+      "score": 31
+    },
+    {
+      "ts": 1746072000,
+      "date": "2025-05",
+      "backlinks": 4081,
+      "domains": 476,
+      "score": 31
+    },
+    {
+      "ts": 1748750400,
+      "date": "2025-06",
+      "backlinks": 4277,
+      "domains": 495,
+      "score": 32
+    },
+    {
+      "ts": 1751342400,
+      "date": "2025-07",
+      "backlinks": 4442,
+      "domains": 515,
+      "score": 32
+    },
+    {
+      "ts": 1754020800,
+      "date": "2025-08",
+      "backlinks": 4704,
+      "domains": 620,
+      "score": 31
+    },
+    {
+      "ts": 1756699200,
+      "date": "2025-09",
+      "backlinks": 4663,
+      "domains": 657,
+      "score": 32
+    },
+    {
+      "ts": 1759291200,
+      "date": "2025-10",
+      "backlinks": 4176,
+      "domains": 737,
+      "score": 32
+    },
+    {
+      "ts": 1761969600,
+      "date": "2025-11",
+      "backlinks": 9221,
+      "domains": 1522,
+      "score": 33
+    },
+    {
+      "ts": 1764565200,
+      "date": "2025-12",
+      "backlinks": 8815,
+      "domains": 1536,
+      "score": 32
+    },
+    {
+      "ts": 1767243600,
+      "date": "2026-01",
+      "backlinks": 8993,
+      "domains": 1544,
+      "score": 32
+    },
+    {
+      "ts": 1769922000,
+      "date": "2026-02",
+      "backlinks": 8743,
+      "domains": 1505,
+      "score": 32
+    },
+    {
+      "ts": 1772341200,
+      "date": "2026-03",
+      "backlinks": 8713,
+      "domains": 1508,
+      "score": 32
+    },
+    {
+      "ts": 1775016000,
+      "date": "2026-04",
+      "backlinks": 8854,
+      "domains": 1498,
+      "score": 31
+    },
+    {
+      "ts": 1777608000,
+      "date": "2026-05",
+      "backlinks": 9103,
+      "domains": 1491,
+      "score": 31
+    },
+    {
+      "ts": 1780286400,
+      "date": "2026-06",
+      "backlinks": 5151,
+      "domains": 1081,
+      "score": 31
+    },
+    {
+      "ts": 1782878400,
+      "date": "2026-07",
+      "backlinks": 5257,
+      "domains": 1084,
+      "score": 32
+    }
+  ]
+}
