@@ -1,0 +1,12 @@
+# Generierte Report-PDFs (werden pro Lauf neu erzeugt, gehören nicht ins Repo)
+data/*.pdf
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Lokale Secrets / Env
+.env
+*.local

@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<style>
+    @page { size: A4; margin: 2cm; }
+    body {
+        font-family: 'Helvetica Neue', Arial, sans-serif;
+        color: #333333;
+        font-size: 10.5pt;
+        line-height: 1.45em;
+    }
+    h1 {
+        font-weight: 300;
+        font-size: 22pt;
+        color: #333333;
+        background-color: #efeff0;
+        padding: 12px 16px;
+        margin-bottom: 4px;
+    }
+    .subtitle { color: #777777; margin-bottom: 20px; font-size: 10pt; }
+    h2 {
+        font-weight: 300;
+        font-size: 15pt;
+        color: #1a3156;
+        border-bottom: 2px solid #777777;
+        width: 180px;
+        padding-bottom: 4px;
+        margin-top: 28px;
+    }
+    .alert-box {
+        background: #fdeeee;
+        border-left: 4px solid #e30613;
+        padding: 10px 14px;
+        margin: 14px 0;
+    }
+    .alert-box p { margin: 2px 0; }
+    table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+    th {
+        background: #1a3156;
+        color: white;
+        text-align: left;
+        padding: 6px 8px;
+        font-weight: 400;
+        font-size: 9pt;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+    }
+    td { padding: 6px 8px; border-bottom: 1px solid #efeff0; font-size: 9.5pt; }
+    .kpi-grid { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 10px; }
+    .kpi-card {
+        background: #efeff0;
+        border-radius: 4px;
+        padding: 12px 16px;
+        min-width: 140px;
+    }
+    .kpi-value { font-size: 20pt; font-weight: 300; color: #1a3156; }
+    .kpi-label { font-size: 8.5pt; color: #777777; text-transform: uppercase; letter-spacing: 0.03em; }
+    .delta-pos { color: #217c21; font-weight: bold; }
+    .delta-neg { color: #e30613; font-weight: bold; }
+    .footer { margin-top: 30px; font-size: 8pt; color: #777777; }
+</style>
+</head>
+<body>
+
+<h1>Backlink-Audit — {{ domain }}</h1>
+<div class="subtitle">Generiert am {{ generated_at }}{% if deltas.has_previous %} · Vergleich zu Snapshot vom {{ deltas.previous_date }}{% endif %}</div>
+
+{% if alerts %}
+<div class="alert-box">
+    {% for a in alerts %}<p>{{ a }}</p>{% endfor %}
+</div>
+{% endif %}
+
+<h2>Übersicht</h2>
+<div class="kpi-grid">
+    <div class="kpi-card">
+        <div class="kpi-value">{{ current.overview.total_backlinks }}</div>
+        <div class="kpi-label">Backlinks gesamt</div>
+        {% if deltas.has_previous %}<div class="{{ 'delta-pos' if deltas.total_backlinks.abs >= 0 else 'delta-neg' }}">{{ '%+d' % deltas.total_backlinks.abs }} ({{ '%+.1f' % deltas.total_backlinks.pct }}%)</div>{% endif %}
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{{ current.overview.referring_domains }}</div>
+        <div class="kpi-label">Referring Domains</div>
+        {% if deltas.has_previous %}<div class="{{ 'delta-pos' if deltas.referring_domains.abs >= 0 else 'delta-neg' }}">{{ '%+d' % deltas.referring_domains.abs }} ({{ '%+.1f' % deltas.referring_domains.pct }}%)</div>{% endif %}
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{{ current.overview.authority_score }}</div>
+        <div class="kpi-label">Authority Score</div>
+        {% if deltas.has_previous %}<div class="{{ 'delta-pos' if deltas.authority_score.abs >= 0 else 'delta-neg' }}">{{ '%+d' % deltas.authority_score.abs }}</div>{% endif %}
+    </div>
+    <div class="kpi-card">
+        <div class="kpi-value">{{ current.overview.follow }} / {{ current.overview.nofollow }}</div>
+        <div class="kpi-label">Follow / Nofollow</div>
+    </div>
+</div>
+
+{% if gsc %}
+<h2>GSC-Kontext (30 Tage)</h2>
+<p>Klicks: {{ gsc.clicks_30d }} · Impressionen: {{ gsc.impressions_30d }}</p>
+{% endif %}
+
+<h2>Top Referring Domains</h2>
+<table>
+    <tr><th>Domain</th><th>Authority Score</th><th>Backlinks</th><th>Land</th></tr>
+    {% for d in current.top_refdomains %}
+    <tr>
+        <td>{{ d.domain }}</td>
+        <td>{{ d.domain_ascore }}</td>
+        <td>{{ d.backlinks_num }}</td>
+        <td>{{ d.country }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<h2>Anchor-Text-Verteilung</h2>
+<table>
+    <tr><th>Anchor</th><th>Domains</th><th>Backlinks</th></tr>
+    {% for a in current.top_anchors %}
+    <tr>
+        <td>{{ a.anchor if a.anchor else '(leer / Bild-Link)' }}</td>
+        <td>{{ a.domains_num }}</td>
+        <td>{{ a.backlinks_num }}</td>
+    </tr>
+    {% endfor %}
+</table>
+
+<div class="footer">
+    Automatisch generiert · LangeWeile UG · Quelle: Semrush Backlink Analytics{% if gsc %} & Google Search Console{% endif %}<br>
+    Hinweis: Interne Verlinkung wird separat über den Semrush Site Audit (Projekt 28417044) überwacht, nicht Teil dieses Reports.
+</div>
+
+</body>
+</html>
