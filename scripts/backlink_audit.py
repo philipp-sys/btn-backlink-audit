@@ -78,6 +78,15 @@ ALERT_THRESHOLDS = {
     "toxic_share_pct": 30,              # Warnung wenn >30% der Domains potenziell toxisch
 }
 
+# Abruf-Limits — Semrush rechnet die Backlink-Reports PRO ZEILE ab, daher sind
+# die großen Listen die teuersten Calls. Bewusst schlank gehalten, um das
+# API-Unit-Budget zu schonen (leicht anpassbar, falls mehr Tiefe gewünscht):
+TOX_CANDIDATE_LIMIT = 150   # niedrigst-autoritäre Ref-Domains für Disavow-Auswahl
+NEWLOST_LIMIT = 60          # je Richtung (neu / verloren)
+ANCHOR_LIMIT = 20           # Top-Anchors
+TOP_REFDOMAINS_LIMIT = 15   # stärkste verweisende Domains
+HISTORY_MONTHS = 24         # Monatstrend für die Charts
+
 # Toxicity-Signale ---------------------------------------------------------
 # Spam-lastige TLDs, überproportional in Link-Farmen / PBNs vertreten.
 SPAM_TLDS = {
@@ -114,9 +123,13 @@ PLAUSIBLE_GEO = {"de", "at", "ch", "us", "gb", "fr", "nl", "be", "it", "es", ""}
 # Statuscodes, die auf transiente Drosselung/Serverfehler hindeuten und einen
 # Retry rechtfertigen. 403 gehört dazu, weil Semrush teure Reports (große
 # Backlink-/Ref-Domain-Listen) bei zu vielen Anfragen kurzfristig mit 403
-# drosselt — ein Backoff löst das meist. (Bei echter Kontingent-Erschöpfung
-# scheitern alle Reports; das ist an leeren Sektionen im Report erkennbar.)
+# drosselt — ein Backoff löst das meist.
 RETRYABLE_STATUS = {403, 429, 500, 502, 503, 504}
+
+
+class SemrushUnitsExhausted(Exception):
+    """Das API-Unit-Guthaben des Semrush-Accounts ist erschöpft (ERROR 132).
+    Kein Retry sinnvoll — der Lauf beendet sich sauber mit einer Hinweis-Mail."""
 
 
 def semrush_request(report_type: str, extra_params: dict, attempts: int = 4) -> str:
@@ -144,6 +157,9 @@ def semrush_request(report_type: str, extra_params: dict, attempts: int = 4) -> 
         except requests.RequestException as exc:            # Timeout / Verbindung
             last_exc = exc
         else:
+            # Leeres API-Unit-Guthaben (ERROR 132) -> sofort abbrechen, kein Retry.
+            if "UNITS BALANCE IS ZERO" in resp.text or "ERROR 132" in resp.text:
+                raise SemrushUnitsExhausted(resp.text.strip())
             if resp.status_code not in RETRYABLE_STATUS:
                 resp.raise_for_status()                     # andere 4xx -> sofort scheitern
                 if resp.text.startswith("ERROR"):
@@ -763,39 +779,78 @@ def fetch_gsc_data() -> dict | None:
 # --------------------------------------------------------------------------
 
 def _safe(fn, default, label):
-    """Sekundäre Reports dürfen einen Lauf nicht komplett scheitern lassen."""
+    """Sekundäre Reports dürfen einen Lauf nicht komplett scheitern lassen.
+    Ausnahme: leeres API-Unit-Guthaben wird durchgereicht -> Hinweis-Mail."""
     try:
         return fn()
+    except SemrushUnitsExhausted:
+        raise
     except Exception as exc:  # noqa: BLE001
         print(f"  ! {label} nicht verfügbar: {exc}")
         return default
 
 
+def send_units_notice(detail: str) -> None:
+    """Kurze Hinweis-Mail, wenn das Semrush-API-Unit-Guthaben leer ist —
+    damit der Ausfall nicht stumm bleibt, sondern jeden Monat sichtbar wird."""
+    try:
+        recipients = [r.strip() for r in os.environ["REPORT_RECIPIENTS"].split(",") if r.strip()]
+        msg = MIMEText(
+            "Der monatliche BTN Backlink-Audit konnte diesen Monat nicht laufen, "
+            "weil das Semrush-API-Unit-Guthaben aufgebraucht ist.\n\n"
+            f"Semrush-Meldung: {detail}\n\n"
+            "Bitte das Guthaben prüfen (Semrush → Profil → Subscription info → "
+            "API units) und ggf. nachbuchen. Der nächste planmäßige Lauf versucht "
+            "es automatisch erneut — ein manueller Lauf ist über GitHub Actions "
+            "(„Run workflow“) jederzeit möglich, sobald wieder Units da sind.\n\n"
+            "-- automatisch generiert · LangeWeile UG --",
+            "plain", "utf-8")
+        msg["Subject"] = (f"BTN Backlink-Audit {datetime.now():%m/%Y} — "
+                          f"übersprungen (Semrush-Units leer)")
+        msg["From"] = os.environ["SMTP_USER"]
+        msg["To"] = ", ".join(recipients)
+        with smtplib.SMTP(os.environ["SMTP_HOST"], int(os.environ["SMTP_PORT"])) as server:
+            server.starttls()
+            server.login(os.environ["SMTP_USER"], os.environ["SMTP_PASSWORD"])
+            server.sendmail(os.environ["SMTP_USER"], recipients, msg.as_string())
+        print("Hinweis-Mail (Semrush-Units leer) verschickt.")
+    except Exception as exc:  # noqa: BLE001
+        print(f"  ! Hinweis-Mail konnte nicht verschickt werden: {exc}")
+
+
 def main():
-    print(f"[1/7] Overview + 24-Monats-Historie für {DOMAIN}...")
+    try:
+        run_audit()
+    except SemrushUnitsExhausted as exc:
+        print(f"[Abbruch] Semrush-Units aufgebraucht — {exc}")
+        send_units_notice(str(exc))
+
+
+def run_audit():
+    print(f"[1/7] Overview + {HISTORY_MONTHS}-Monats-Historie für {DOMAIN}...")
     current = fetch_overview()
-    history = fetch_historical()
+    history = fetch_historical(HISTORY_MONTHS)
 
     print("[2/7] Detaildaten (Ref-Domains, AS-Profil, Anchors, TLD, Geo)...")
     ascore_profile = _safe(fetch_ascore_profile, None, "AS-Profil")
     ascore_available = ascore_profile is not None
     ascore_profile = ascore_profile or []
-    anchors = _safe(lambda: fetch_anchors(30), [], "Anchors")
+    anchors = _safe(lambda: fetch_anchors(ANCHOR_LIMIT), [], "Anchors")
     tld = _safe(lambda: fetch_tld(10), [], "TLD-Verteilung")
     geo = _safe(lambda: fetch_geo(10), [], "Geo-Verteilung")
     top_refdomains = _safe(
-        lambda: fetch_refdomains(20, "domain_ascore_desc",
+        lambda: fetch_refdomains(TOP_REFDOMAINS_LIMIT, "domain_ascore_desc",
                                  "domain_ascore,domain,backlinks_num,country"),
         [], "Top-Ref-Domains")
 
     print("[3/7] Neue & verlorene Links...")
-    new_lost = _safe(lambda: fetch_new_lost(150), {
+    new_lost = _safe(lambda: fetch_new_lost(NEWLOST_LIMIT), {
         "new_backlinks": 0, "lost_backlinks": 0, "new_domains": [], "lost_domains": []},
         "Neu/Verlust")
 
     print("[4/7] Toxicity-Analyse + Disavow-Kandidaten...")
     tox_candidates = _safe(
-        lambda: fetch_refdomains(400, "domain_ascore_asc",
+        lambda: fetch_refdomains(TOX_CANDIDATE_LIMIT, "domain_ascore_asc",
                                  "domain_ascore,domain,backlinks_num,country"),
         None, "Toxicity-Kandidaten")
     tox = analyze_toxicity(tox_candidates or [])
