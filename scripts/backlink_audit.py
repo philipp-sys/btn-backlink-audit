@@ -53,7 +53,10 @@ from jinja2 import Environment, FileSystemLoader
 
 DOMAIN = "btn-muenzen.de"
 SEMRUSH_API_URL = "https://api.semrush.com/analytics/v1/"
-SEMRUSH_API_KEY = os.environ["SEMRUSH_API_KEY"]
+# Nur bei Bedarf lesen (default leer), damit das Modul auch ohne API-Key
+# importiert werden kann — z.B. für den CSV-basierten Report (report_from_audit.py),
+# der keine API braucht.
+SEMRUSH_API_KEY = os.environ.get("SEMRUSH_API_KEY", "")
 
 ROOT = Path(__file__).resolve().parent.parent
 HISTORY_FILE = ROOT / "data" / "history.json"
