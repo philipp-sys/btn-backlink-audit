@@ -22,6 +22,7 @@ Mit --email zusätzlich Versand an REPORT_RECIPIENTS (SMTP-Secrets nötig).
 """
 
 import csv
+import json
 import os
 import smtplib
 import sys
@@ -41,6 +42,7 @@ DOMAIN = ba.DOMAIN
 ROOT = ba.ROOT
 TEMPLATE_DIR = ba.TEMPLATE_DIR
 PROJECT_ID = "28417044"
+PROFILE_FILE = ROOT / "data" / "profile.json"
 
 # Toxic-Score-Schwellen (Semrush-Konvention: 0–44 niedrig, 45–59 mittel, 60+ hoch)
 TOX_CANDIDATE = 45
@@ -60,7 +62,45 @@ def tld_of(domain: str) -> str:
     return domain.rsplit(".", 1)[-1].lower() if "." in domain else ""
 
 
-def build_context(rows: list[dict]) -> dict:
+def _delta(cur: int, prev: int) -> dict:
+    ab = cur - prev
+    return {"abs": ab, "pct": round(ab / prev * 100, 1) if prev else 0.0}
+
+
+def load_profile() -> dict | None:
+    if PROFILE_FILE.exists():
+        try:
+            return json.loads(PROFILE_FILE.read_text())
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def profile_context(profile: dict | None) -> dict:
+    """Profil-Kopfzahlen + 24-Monats-Trend aus data/profile.json (optional)."""
+    hist = sorted((profile or {}).get("history", []), key=lambda x: x.get("date", ""))
+    if len(hist) < 2:
+        return {"has": False}
+    cur, prev = hist[-1], hist[-2]
+    follow, nofollow = profile.get("follow"), profile.get("nofollow")
+    follow_chart = ""
+    if follow is not None and nofollow is not None:
+        follow_chart = ba.svg_stacked_ratio([
+            ("Follow", follow, ba.C_NAVY), ("Nofollow", nofollow, ba.C_GREY)])
+    return {
+        "has": True,
+        "backlinks": cur["backlinks"], "ref_domains": cur["domains"], "ascore": cur["score"],
+        "prev_date": prev["date"],
+        "d_backlinks": _delta(cur["backlinks"], prev["backlinks"]),
+        "d_domains": _delta(cur["domains"], prev["domains"]),
+        "d_ascore": {"abs": cur["score"] - prev["score"]},
+        "chart_domains": ba.svg_area(hist, "domains", ba.C_NAVY, "Referring Domains"),
+        "chart_backlinks": ba.svg_area(hist, "backlinks", ba.C_GREY, "Backlinks"),
+        "chart_follow": follow_chart,
+    }
+
+
+def build_context(rows: list[dict], profile: dict | None = None) -> dict:
     total = len(rows)
     # --- Toxicity / Disavow (echte Semrush-Scores) ---
     flagged = []
@@ -184,6 +224,7 @@ def build_context(rows: list[dict]) -> dict:
         "domain": DOMAIN,
         "generated_at": datetime.now().strftime("%d.%m.%Y"),
         "project_id": PROJECT_ID,
+        "profile": profile_context(profile),
         "verdict": verdict, "verdict_class": vclass, "summary": summary, "alerts": alerts,
         "audited_domains": total, "disavow_count": len(flagged), "disavow_high": disavow_high,
         "semrush_disavow": semrush_disavow, "avg_toxic": avg_toxic, "nofollow_pct": nofollow_pct,
@@ -234,6 +275,15 @@ def send_email(pdf_path: Path, disavow_path: Path, ctx: dict) -> None:
         "ZUSAMMENFASSUNG", ctx["summary"], "",
         f"Status: {ctx['verdict']}", "",
         "KENNZAHLEN",
+    ]
+    if ctx["profile"]["has"]:
+        p = ctx["profile"]
+        body += [
+            f"  Backlinks gesamt:    {ba._de_num(p['backlinks'])} ({p['d_backlinks']['abs']:+d})",
+            f"  Referring Domains:   {ba._de_num(p['ref_domains'])} ({p['d_domains']['abs']:+d})",
+            f"  Authority Score:     {p['ascore']} ({p['d_ascore']['abs']:+d})",
+        ]
+    body += [
         f"  Auditierte Domains:  {ctx['audited_domains']}",
         f"  Disavow-Kandidaten:  {ctx['disavow_count']} (davon {ctx['disavow_high']} hochgradig)",
         f"  Ø Toxic Score:       {ctx['avg_toxic']}",
@@ -269,7 +319,10 @@ def main():
 
     print(f"[1/3] Lese Semrush-Backlink-Audit-CSV: {csv_path}")
     rows = load_rows(csv_path)
-    ctx = build_context(rows)
+    profile = load_profile()
+    if profile:
+        print(f"      + Profil-Daten (profile.json): {len(profile.get('history', []))} Monate")
+    ctx = build_context(rows, profile)
 
     print(f"[2/3] Rendere PDF ({ctx['audited_domains']} Domains, "
           f"{ctx['disavow_count']} Disavow-Kandidaten)...")
