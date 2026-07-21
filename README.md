@@ -56,20 +56,35 @@ kein eigener Server nötig.
 > liegt, feuert der automatische Monatslauf nicht — erst nach dem Merge nach
 > `main`.
 
-## Kosten / Limits
+## Kosten / API-Units
 
-Jeder Lauf verbraucht Semrush-API-Units. Die volle Datentiefe (Overview,
-Historie, Ref-Domains, AS-Profil, Anchors, TLD, Geo, Neu/Verlust, Toxicity-
-Kandidaten ≈ 9 Reports) liegt grob bei **~150–250 Units/Monat**, abhängig von
-eurem Plan. Bei monatlicher Frequenz vernachlässigbar — aber gleicher API-Key/
-Kontingent wie Projekt 28417044, kurz prüfen ob's Überschneidungen mit dem
-monatlichen Reporting-Abzug gibt.
+**Wichtig:** Semrush rechnet die Backlink-Reports **pro zurückgegebener Zeile**
+ab — große Listen sind also die teuersten Calls. Der Lauf ist bewusst schlank
+gehalten; die Limits stehen als Konstanten oben im Script und sind leicht
+anpassbar:
 
-Die Toxicity-Analyse zieht die 400 Domains mit dem niedrigsten Authority Score
-(`backlinks_refdomains`, Sortierung aufsteigend) als Disavow-Kandidaten-Pool.
-Der ausgewiesene Anteil „niedrige Autorität (AS ≤ 5)" wird dagegen aus der
+| Konstante | Wert | Zweck |
+|---|---|---|
+| `TOX_CANDIDATE_LIMIT` | 150 | niedrigst-autoritäre Ref-Domains für die Disavow-Auswahl |
+| `NEWLOST_LIMIT` | 60 | neue bzw. verlorene Links (je Richtung) |
+| `HISTORY_MONTHS` | 24 | Monatstrend für die Charts |
+| `ANCHOR_LIMIT` | 20 | Top-Anchors |
+| `TOP_REFDOMAINS_LIMIT` | 15 | stärkste verweisende Domains |
+
+Der ausgewiesene Anteil „niedrige Autorität (AS ≤ 5)" wird aus der
 vollständigen Authority-Score-Verteilung (`backlinks_ascore_profile`) berechnet
-und ist damit nicht durch dieses Limit gedeckelt.
+und ist damit **nicht** durch `TOX_CANDIDATE_LIMIT` gedeckelt — die Disavow-
+*Liste* umfasst die bis zu 150 auffälligsten Domains, die *Kennzahl* dagegen das
+ganze Profil.
+
+**Leeres Guthaben (`ERROR 132 :: API UNITS BALANCE IS ZERO`):** Sind keine Units
+mehr vorhanden, bricht der Lauf **nicht kryptisch ab**, sondern verschickt eine
+kurze Hinweis-Mail („übersprungen — Semrush-Units leer") an `REPORT_RECIPIENTS`.
+So ist der Zustand jeden Monat sichtbar. Danach: Guthaben unter **Semrush →
+Profil → Subscription info → API units** prüfen/nachbuchen; der nächste
+planmäßige Lauf (oder ein manueller „Run workflow") zieht dann wieder durch.
+Gleicher API-Key/Kontingent wie Projekt 28417044 — Überschneidung mit dem
+monatlichen Reporting-Abzug im Blick behalten.
 
 ## GSC-Anbindung (optional, Phase 2)
 
