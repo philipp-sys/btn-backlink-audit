@@ -37,6 +37,7 @@ import json
 import os
 import re
 import smtplib
+import time
 from datetime import datetime, timezone
 from email.mime.application import MIMEApplication
 from email.mime.multipart import MIMEMultipart
@@ -110,21 +111,42 @@ PLAUSIBLE_GEO = {"de", "at", "ch", "us", "gb", "fr", "nl", "be", "it", "es", ""}
 # 1. Semrush-Zugriff
 # --------------------------------------------------------------------------
 
-def semrush_request(report_type: str, extra_params: dict) -> str:
-    """Ruft einen Semrush-Report ab und gibt die Rohantwort (CSV, ';'-getrennt) zurück."""
+def semrush_request(report_type: str, extra_params: dict, attempts: int = 3) -> str:
+    """Ruft einen Semrush-Report ab und gibt die Rohantwort (CSV, ';'-getrennt) zurück.
+
+    Robust gegen transiente Fehler: bei 5xx-Server-Fehlern oder Netzwerk-
+    Problemen wird mit kurzem Backoff wiederholt (Semrush liefert gelegentlich
+    sporadische 500er). 4xx-Client-Fehler werden NICHT wiederholt (deterministisch).
+    """
+    export_columns = extra_params.pop("export_columns", "")
     params = {
         "key": SEMRUSH_API_KEY,
         "type": report_type,
         "target": DOMAIN,
         "target_type": "root_domain",
-        "export_columns": extra_params.pop("export_columns", ""),
         **extra_params,
     }
-    resp = requests.get(SEMRUSH_API_URL, params=params, timeout=60)
-    resp.raise_for_status()
-    if resp.text.startswith("ERROR"):
-        raise RuntimeError(f"Semrush-Fehler bei {report_type}: {resp.text}")
-    return resp.text
+    if export_columns:
+        params["export_columns"] = export_columns
+
+    last_exc = None
+    for attempt in range(attempts):
+        try:
+            resp = requests.get(SEMRUSH_API_URL, params=params, timeout=60)
+        except requests.RequestException as exc:            # Timeout / Verbindung
+            last_exc = exc
+            time.sleep(2 * (attempt + 1))
+            continue
+        if 500 <= resp.status_code < 600:                   # transienter Serverfehler
+            last_exc = requests.HTTPError(
+                f"{resp.status_code} Server Error bei {report_type}")
+            time.sleep(2 * (attempt + 1))
+            continue
+        resp.raise_for_status()                             # 4xx -> sofort scheitern
+        if resp.text.startswith("ERROR"):
+            raise RuntimeError(f"Semrush-Fehler bei {report_type}: {resp.text}")
+        return resp.text
+    raise last_exc
 
 
 def parse_csv(raw: str) -> list[dict]:
